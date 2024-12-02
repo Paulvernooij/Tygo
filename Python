@@ -1,0 +1,60 @@
+import openai
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+# OpenAI API-sleutel
+openai.api_key = "YOUR_OPENAI_API_KEY"
+
+# Gebruikersdata (kan later in een database worden opgeslagen)
+user_progress = {
+    1: {"level": 1, "correct_answers": 0, "total_answers": 0}
+}
+
+# Functie om vragen en teksten te genereren
+def generate_question_and_text(level):
+    prompt = f"""
+    Het kind zit op begrijpend lezen niveau {level}. 
+    Maak een korte tekst van 50-100 woorden over een interessant onderwerp voor kinderen (bijvoorbeeld vliegtuigen). 
+    Stel daarna 1-2 multiple choice vragen over de hoofdgedachte of titel.
+    """
+    response = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt=prompt,
+        max_tokens=150,
+        temperature=0.7
+    )
+    return response.choices[0].text.strip()
+
+@app.route('/get_question', methods=['POST'])
+def get_question():
+    user_id = request.json.get("user_id")
+    user_data = user_progress.get(user_id, {"level": 1})
+    
+    # Genereer vraag en tekst op basis van niveau
+    text_and_question = generate_question_and_text(user_data["level"])
+    
+    return jsonify({"text_and_question": text_and_question})
+
+@app.route('/submit_answer', methods=['POST'])
+def submit_answer():
+    user_id = request.json.get("user_id")
+    is_correct = request.json.get("is_correct")
+
+    # Update voortgang
+    user_data = user_progress[user_id]
+    user_data["total_answers"] += 1
+    if is_correct:
+        user_data["correct_answers"] += 1
+
+    # Bereken nieuwe moeilijkheidsgraad
+    accuracy = user_data["correct_answers"] / user_data["total_answers"]
+    if accuracy > 0.8 and user_data["level"] < 5:
+        user_data["level"] += 1
+    elif accuracy < 0.5 and user_data["level"] > 1:
+        user_data["level"] -= 1
+
+    return jsonify({"new_level": user_data["level"]})
+
+if __name__ == '__main__':
+    app.run(debug=True)
